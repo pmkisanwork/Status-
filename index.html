@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GPS Speed Tracker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --card: #161b24;
+    --accent: #00e5ff;
+    --accent2: #ff6b00;
+    --warn: #ff3b3b;
+    --green: #00e676;
+    --text: #e0e6f0;
+    --muted: #4a5568;
+    --border: rgba(0,229,255,0.12);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: rgba(17,19,24,0.95);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 99;
+  }
+  .logo { font-family: 'Orbitron', monospace; font-size: 14px; color: var(--accent); letter-spacing: 2px; }
+  .logo span { color: var(--accent2); }
+  #status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--muted);
+    box-shadow: 0 0 0 0 var(--muted);
+    transition: background 0.4s;
+    animation: none;
+  }
+  #status-dot.active {
+    background: var(--green);
+    animation: pulse-green 1.5s infinite;
+  }
+  #status-dot.error { background: var(--warn); }
+
+  @keyframes pulse-green {
+    0%   { box-shadow: 0 0 0 0 rgba(0,230,118,0.6); }
+    70%  { box-shadow: 0 0 0 8px rgba(0,230,118,0); }
+    100% { box-shadow: 0 0 0 0 rgba(0,230,118,0); }
+  }
+
+  /* ── Main ── */
+  main {
+    width: 100%;
+    max-width: 480px;
+    padding: 24px 16px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── Speedometer ── */
+  .speedo-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 32px 20px 28px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .speedo-wrap::before {
+    content: '';
+    position: absolute;
+    top: -60px; left: 50%; transform: translateX(-50%);
+    width: 260px; height: 260px;
+    background: radial-gradient(circle, rgba(0,229,255,0.07) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .speed-label {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  #speed-display {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(72px, 22vw, 108px);
+    font-weight: 900;
+    line-height: 1;
+    color: var(--accent);
+    text-shadow: 0 0 30px rgba(0,229,255,0.4), 0 0 60px rgba(0,229,255,0.15);
+    transition: color 0.3s, text-shadow 0.3s;
+    letter-spacing: -2px;
+  }
+  #speed-display.warn {
+    color: var(--accent2);
+    text-shadow: 0 0 30px rgba(255,107,0,0.5);
+  }
+  #speed-display.danger {
+    color: var(--warn);
+    text-shadow: 0 0 30px rgba(255,59,59,0.6);
+    animation: flash 0.6s infinite alternate;
+  }
+  @keyframes flash { from { opacity: 1; } to { opacity: 0.6; } }
+
+  .unit {
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    margin-top: 4px;
+  }
+
+  /* ── Arc gauge ── */
+  .arc-wrap { margin: 16px auto 0; position: relative; width: 200px; height: 110px; }
+  #arc-svg { width: 200px; height: 110px; overflow: visible; }
+  .arc-track { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 8; stroke-linecap: round; }
+  #arc-fill  { fill: none; stroke: var(--accent); stroke-width: 8; stroke-linecap: round;
+               stroke-dasharray: 251; stroke-dashoffset: 251;
+               transition: stroke-dashoffset 0.5s ease, stroke 0.3s; }
+
+  /* ── Stats grid ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .stat-icon { font-size: 20px; }
+  .stat-title { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
+  .stat-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .stat-value span { font-size: 11px; color: var(--muted); font-family: 'Inter', sans-serif; font-weight: 400; }
+
+  /* ── Speed limit ── */
+  .limit-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .limit-badge {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    border: 3px solid var(--accent2);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    font-weight: 900;
+    color: var(--accent2);
+    flex-shrink: 0;
+  }
+  .limit-info { flex: 1; }
+  .limit-info p { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .limit-info input {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    width: 80px;
+    outline: none;
+    padding: 2px 0;
+  }
+
+  /* ── Map placeholder ── */
+  .map-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .map-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; }
+  #coords-line {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+    word-break: break-all;
+  }
+  .coord-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .coord-chip {
+    background: rgba(0,229,255,0.06);
+    border: 1px solid rgba(0,229,255,0.15);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: 'Orbitron', monospace;
+    color: var(--accent);
+  }
+  .accuracy-row { font-size: 11px; color: var(--muted); }
+
+  /* ── Status msg ── */
+  #msg {
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+    padding: 8px;
+    min-height: 20px;
+  }
+  #msg.err { color: var(--warn); }
+
+  /* ── Start btn ── */
+  #start-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #00b4cc, #007acc);
+    color: #fff;
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  #start-btn:active { transform: scale(0.97); opacity: 0.85; }
+  #start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── History ── */
+  .history-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .history-title { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+  #speed-history { display: flex; gap: 4px; align-items: flex-end; height: 48px; }
+  .bar {
+    flex: 1;
+    background: rgba(0,229,255,0.2);
+    border-radius: 3px 3px 0 0;
+    min-height: 3px;
+    transition: height 0.4s ease;
+  }
+  .bar.peak { background: var(--accent2); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">GPS<span>SPEED</span></div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span id="status-text" style="font-size:11px;color:var(--muted)">Inactive</span>
+    <div id="status-dot"></div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Speedometer -->
+  <div class="speedo-wrap">
+    <div class="speed-label">Current Speed</div>
+    <div id="speed-display">0</div>
+    <div class="unit">KM/H</div>
+
+    <div class="arc-wrap">
+      <svg id="arc-svg" viewBox="0 0 200 110">
+        <!-- half circle: r=80, center 100,100, from 180° to 0° -->
+        <path class="arc-track" d="M 20,100 A 80,80 0 0,1 180,100"/>
+        <path id="arc-fill"      d="M 20,100 A 80,80 0 0,1 180,100"/>
+        <!-- tick marks -->
+        <g stroke="rgba(255,255,255,0.1)" stroke-width="1">
+          <line x1="20" y1="100" x2="14" y2="100" transform="rotate(0 100 100)"/>
+          <line x1="20" y1="100" x2="14" y2="100" transform="rotate(30 100 100)"/>
+          <line x1="20" y1="100" x2="14" y2="100" transform="rotate(60 100 100)"/>
+          <line x1="20" y1="100" x2="14" y2="100" transform="rotate(90 100 100)"/>
+          <line x1="20" y1="100" x2="14" y2="100" transform="rotate(120 100 100)"/>
+          <line x1="20" y1="100" x2="14" y2="100" transform="rotate(150 100 100)"/>
+          <line x1="20" y1="100" x2="14" y2="100" transform="rotate(180 100 100)"/>
+        </g>
+        <text x="18" y="116" fill="#4a5568" font-size="9" font-family="Orbitron,monospace">0</text>
+        <text x="170" y="116" fill="#4a5568" font-size="9" font-family="Orbitron,monospace">200</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon">🏁</div>
+      <div class="stat-title">Max Speed</div>
+      <div class="stat-value" id="max-speed">0 <span>km/h</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📏</div>
+      <div class="stat-title">Distance</div>
+      <div class="stat-value" id="distance">0.00 <span>km</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">⏱️</div>
+      <div class="stat-title">Trip Time</div>
+      <div class="stat-value" id="trip-time">00:00 <span></span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📡</div>
+      <div class="stat-title">Accuracy</div>
+      <div class="stat-value" id="accuracy">— <span>m</span></div>
+    </div>
+  </div>
+
+  <!-- Speed limit -->
+  <div class="limit-card">
+    <div class="limit-badge" id="limit-badge">60</div>
+    <div class="limit-info">
+      <p>Speed Limit (km/h)</p>
+      <input type="number" id="limit-input" value="60" min="10" max="200" step="10">
+    </div>
+    <div style="font-size:11px;color:var(--muted);text-align:right;">
+      Alert jab<br>limit cross ho
+    </div>
+  </div>
+
+  <!-- Coords -->
+  <div class="map-card">
+    <div class="map-label">📍 Location</div>
+    <div class="coord-row">
+      <div class="coord-chip" id="lat-chip">Lat: —</div>
+      <div class="coord-chip" id="lng-chip">Lng: —</div>
+    </div>
+    <div class="accuracy-row" id="acc-row">Accuracy: —</div>
+  </div>
+
+  <!-- Status -->
+  <div id="msg">Permission do aur tracking shuru hogi...</div>
+
+  <!-- Start/Stop -->
+  <button id="start-btn">▶ START TRACKING</button>
+
+  <!-- Mini history chart -->
+  <div class="history-card">
+    <div class="history-title">📊 Speed History (last 20 readings)</div>
+    <div id="speed-history"></div>
+  </div>
+
+</main>
+
+<script>
+  const speedEl   = document.getElementById('speed-display');
+  const maxSpeedEl = document.getElementById('max-speed');
+  const distEl    = document.getElementById('distance');
+  const timeEl    = document.getElementById('trip-time');
+  const accEl     = document.getElementById('accuracy');
+  const msgEl     = document.getElementById('msg');
+  const startBtn  = document.getElementById('start-btn');
+  const dot       = document.getElementById('status-dot');
+  const statusTxt = document.getElementById('status-text');
+  const arcFill   = document.getElementById('arc-fill');
+  const limitInput = document.getElementById('limit-input');
+  const limitBadge = document.getElementById('limit-badge');
+  const latChip   = document.getElementById('lat-chip');
+  const lngChip   = document.getElementById('lng-chip');
+  const accRow    = document.getElementById('acc-row');
+  const histWrap  = document.getElementById('speed-history');
+
+  let watchId = null;
+  let isTracking = false;
+  let maxSpeed = 0;
+  let totalDist = 0;
+  let lastPos = null;
+  let startTime = null;
+  let timerInterval = null;
+  let speedHistory = [];
+  let speedLimit = 60;
+  let limitAlert = false;
+
+  // Arc path total length ≈ 251 (π * 80)
+  const ARC_LEN = 251;
+  const MAX_SPEED_SCALE = 200;
+
+  // Init history bars
+  for (let i = 0; i < 20; i++) {
+    const b = document.createElement('div');
+    b.className = 'bar';
+    b.style.height = '3px';
+    histWrap.appendChild(b);
+  }
+
+  limitInput.addEventListener('input', () => {
+    speedLimit = parseInt(limitInput.value) || 60;
+    limitBadge.textContent = speedLimit;
+  });
+
+  function setArc(kmh) {
+    const pct = Math.min(kmh / MAX_SPEED_SCALE, 1);
+    const offset = ARC_LEN - pct * ARC_LEN;
+    arcFill.style.strokeDashoffset = offset;
+    if (pct > 0.85) arcFill.style.stroke = 'var(--warn)';
+    else if (pct > 0.6) arcFill.style.stroke = 'var(--accent2)';
+    else arcFill.style.stroke = 'var(--accent)';
+  }
+
+  function updateHistory(kmh) {
+    speedHistory.push(kmh);
+    if (speedHistory.length > 20) speedHistory.shift();
+    const bars = histWrap.querySelectorAll('.bar');
+    const peak = Math.max(...speedHistory, 1);
+    speedHistory.forEach((v, i) => {
+      const pct = (v / peak) * 100;
+      bars[i].style.height = Math.max(pct, 6) + '%';
+      bars[i].className = 'bar' + (v === peak && v > 0 ? ' peak' : '');
+    });
+  }
+
+  function haversine(p1, p2) {
+    const R = 6371;
+    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+    const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(p1.lat*Math.PI/180)*Math.cos(p2.lat*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function formatTime(ms) {
+    const s = Math.floor(ms/1000);
+    const m = Math.floor(s/60);
+    const h = Math.floor(m/60);
+    if (h > 0) return `${String(h).padStart(2,'0')}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    return `${String(m).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }
+
+  function onPosition(pos) {
+    const { latitude, longitude, speed, accuracy } = pos.coords;
+    const kmh = speed != null ? Math.round(speed * 3.6) : 0;
+
+    // Speed display
+    speedEl.textContent = kmh;
+    setArc(kmh);
+    updateHistory(kmh);
+
+    // Color alert
+    if (kmh > speedLimit) {
+      speedEl.className = 'danger';
+      if (!limitAlert) {
+        limitAlert = true;
+        if ('vibrate' in navigator) navigator.vibrate([200,100,200]);
+        msgEl.textContent = `⚠️ Speed limit ${speedLimit} km/h cross ho gayi!`;
+        msgEl.className = 'err';
+      }
+    } else if (kmh > speedLimit * 0.85) {
+      speedEl.className = 'warn';
+      limitAlert = false;
+      msgEl.textContent = 'Speed limit ke qareeb hai!';
+      msgEl.className = '';
+    } else {
+      speedEl.className = '';
+      limitAlert = false;
+      msgEl.textContent = 'Tracking active...';
+      msgEl.className = '';
+    }
+
+    // Max speed
+    if (kmh > maxSpeed) maxSpeed = kmh;
+    maxSpeedEl.innerHTML = `${maxSpeed} <span>km/h</span>`;
+
+    // Distance
+    const cur = { lat: latitude, lng: longitude };
+    if (lastPos) {
+      totalDist += haversine(lastPos, cur);
+    }
+    lastPos = cur;
+    distEl.innerHTML = `${totalDist.toFixed(2)} <span>km</span>`;
+
+    // Accuracy
+    const accM = Math.round(accuracy);
+    accEl.innerHTML = `${accM} <span>m</span>`;
+    accRow.textContent = `Accuracy: ±${accM}m`;
+
+    // Coords
+    latChip.textContent = `Lat: ${latitude.toFixed(5)}`;
+    lngChip.textContent = `Lng: ${longitude.toFixed(5)}`;
+
+    // Status dot
+    dot.className = 'active';
+    statusTxt.textContent = 'Live';
+  }
+
+  function onError(err) {
+    dot.className = 'error';
+    statusTxt.textContent = 'Error';
+    let m = 'GPS error.';
+    if (err.code === 1) m = '❌ Location permission deny kar di. Browser settings se allow karo.';
+    else if (err.code === 2) m = '📡 GPS signal nahi mila. Outdoor jaao.';
+    else if (err.code === 3) m = '⏱️ GPS timeout. Retry karo.';
+    msgEl.textContent = m;
+    msgEl.className = 'err';
+  }
+
+  function startTracking() {
+    if (!('geolocation' in navigator)) {
+      msgEl.textContent = '❌ Yeh browser GPS support nahi karta.';
+      msgEl.className = 'err';
+      return;
+    }
+    isTracking = true;
+    startBtn.textContent = '⏹ STOP TRACKING';
+    startBtn.style.background = 'linear-gradient(135deg,#c0392b,#922b21)';
+    dot.className = 'active';
+    statusTxt.textContent = 'Starting...';
+    msgEl.textContent = 'GPS signal dhundh raha hai...';
+    msgEl.className = '';
+    startTime = Date.now();
+    timerInterval = setInterval(() => {
+      timeEl.innerHTML = `${formatTime(Date.now()-startTime)} <span></span>`;
+    }, 1000);
+
+    watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000
+    });
+  }
+
+  function stopTracking() {
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    clearInterval(timerInterval);
+    isTracking = false;
+    watchId = null;
+    dot.className = '';
+    statusTxt.textContent = 'Stopped';
+    startBtn.textContent = '▶ START TRACKING';
+    startBtn.style.background = '';
+    msgEl.textContent = `Trip complete! Max: ${maxSpeed} km/h | Dist: ${totalDist.toFixed(2)} km`;
+    msgEl.className = '';
+  }
+
+  startBtn.addEventListener('click', () => {
+    isTracking ? stopTracking() : startTracking();
+  });
+
+  // Auto-start on load
+  window.addEventListener('load', () => {
+    setTimeout(startTracking, 600);
+  });
+</script>
+</body>
+</html>
